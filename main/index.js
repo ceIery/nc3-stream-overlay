@@ -12,7 +12,6 @@ let mappool, teams;
 let map, mapid;
 
 let isAcc = () => {
-	// console.log(mapid);
 	if (!mapid) return false;
 	let map_obj = mappool.beatmaps.find((m) => m.beatmap_id == mapid);
 	if (map_obj?.identifier?.toUpperCase().includes("ACC")) return true;
@@ -68,7 +67,6 @@ let timer_in_progress = false;
 
 socket.onmessage = async event => {
 	const data = JSON.parse(event.data);
-	console.log(data);
 	const now = Date.now();
 
 	if (scoreVisible !== data.tourney.scoreVisible) {
