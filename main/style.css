@@ -249,6 +249,10 @@ html {
 	margin-right: 4px;
 }
 
+.chat-body {
+	word-break: break-all;
+}
+
 .chat-time {
 	display: flex;
 	justify-content: center;

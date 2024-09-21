@@ -10,47 +10,40 @@ let mappool, teams;
 })();
 
 let map, mapid;
-window.setInterval(async () => {
-	await delay(200);
-	let cookieName = 'lastPick';
-	const match = document.cookie.match(`(?:^|.*)${cookieName}=(.+?)(?:$|[|;].*)`);
 
-	let checkValid = () => {
-		if (!mapid) return -9;
-		if (match) {
-			let cookieValue = match[1].split('-');
-			if (cookieValue.length !== 2) return -1;  // expected format: <beatmap_id>-<picking_team>
-			const parsedBeatmapID = parseInt(cookieValue[0]);
-			if (isNaN(parsedBeatmapID)) return -2;
-
-			// if (true) {  // bypass beatmap id checking during development
-			if (mapid == parsedBeatmapID) {
-				let map_obj = mappool.beatmaps.find(m => m.beatmap_id == mapid);
-				if (map_obj?.identifier?.toUpperCase().includes('TB')) return -3;
-				if (nameRed && nameBlue) {
-					$('#picked_by').text(`Picked by ${cookieValue[1] === 'red' ? nameRed : nameBlue}`).css('opacity', 1).addClass(cookieValue[1]).removeClass(opposite_team(cookieValue[1]));
-					$('#map_slot_container').addClass(cookieValue[1]).removeClass(opposite_team(cookieValue[1]));
-					$('#map_image_container').addClass(cookieValue[1]).removeClass(opposite_team(cookieValue[1]));
-				}
-				else {
-					$('#picked_by').text('').css('opacity', 0).removeClass('red blue');
-					$('#map_slot_container').removeClass('red blue');
-					$('#map_image_container').removeClass('red blue');
-				}
-				return 0;
-			}
-			return -255;
-		}
-	}
-
-	if (checkValid() !== 0) {
-		$('#picked_by').text('').css('opacity', 0);
-		$('#map_slot_container').removeClass('red blue');
-		$('#map_image_container').removeClass('red blue');
-	}
-}, 500);
+let isAcc = () => {
+	// console.log(mapid);
+	if (!mapid) return false;
+	let map_obj = mappool.beatmaps.find((m) => m.beatmap_id == mapid);
+	if (map_obj?.identifier?.toUpperCase().includes("ACC")) return true;
+	return false;
+};
 
 let socket = new ReconnectingWebSocket('ws://' + location.host + '/websocket/v2');
+
+let acc_animation = {
+	red_score: new CountUp("score_red", 0, 0, 2, 0.3, {
+	  useEasing: true,
+	  useGrouping: true,
+	  separator: ",",
+	  decimal: ".",
+	  suffix: "%",
+	}),
+	blue_score: new CountUp("score_blue", 0, 0, 2, 0.3, {
+	  useEasing: true,
+	  useGrouping: true,
+	  separator: ",",
+	  decimal: ".",
+	  suffix: "%",
+	}),
+	score_diff: new CountUp("score_diff", 0, 0, 2, 0.3, {
+	  useEasing: true,
+	  useGrouping: true,
+	  separator: ",",
+	  decimal: ".",
+	  suffix: "%",
+	}),
+};
 
 let animation = {
 	red_score: new CountUp('score_red', 0, 0, 0, .3, { useEasing: true, useGrouping: true, separator: ',', decimal: '.', suffix: '' }),
@@ -75,6 +68,7 @@ let timer_in_progress = false;
 
 socket.onmessage = async event => {
 	const data = JSON.parse(event.data);
+	console.log(data);
 	const now = Date.now();
 
 	if (scoreVisible !== data.tourney.scoreVisible) {
@@ -99,37 +93,75 @@ socket.onmessage = async event => {
 		mapid = data.beatmap.id;
 		map = mappool ? mappool.beatmaps.find(m => m.beatmap_id == mapid || m.md5 == md5) ?? { id: data.beatmap.id, mods: 'NM', identifier: null } : { id: null, mods: 'NM', identifier: null };
 		const mods = map.mods ?? 'NM';
-		const stats = getModStats(data.beatmap.stats.cs.original, data.beatmap.stats.ar.original, data.beatmap.stats.od.original, data.beatmap.stats.bpm.common, mods);
+		const mod_enum = calculate_mod_enum(mods);
+		const stats = await $.getJSON(`http://${location.host}/api/calculate/pp`, {"mods": mod_enum})
 		const len_ = data.beatmap.time.lastObject - data.beatmap.time.firstObject;
 
-		$('#cs').text(`cs ${stats.cs}`);
-		$('#ar').text(`ar ${stats.ar}`);
-		$('#od').text(`od ${stats.od}`);
-		$('#bpm').text(`${stats.bpm} bpm`);
-		$('#length').text(`${Math.trunc((len_ / stats.speed) / 1000 / 60)}:${Math.trunc((len_ / stats.speed) / 1000 % 60).toString().padStart(2, '0')} length`);
-		$('#sr').text(`${data.beatmap.stats.stars.total} stars`);
+		// cs isn't returned by calculate pp endpoint
+		const cs_raw = data.beatmap.stats.cs.original
+		$('#cs').text(`cs ${Math.round(Math.min(mods.includes('HR') ? cs_raw * 1.3 : mods.includes('EZ') ? cs_raw * 0.5 : cs_raw, 10) * 10) / 10}`);
+
+		$('#ar').text(`ar ${Math.round(stats.difficulty.ar * 10) / 10}`);
+		$('#od').text(`od ${Math.round(stats.difficulty.od * 10) / 10}`);
+
+		let length_modifier = map ? (mods?.includes('DT') ? 1.5 : 1) : 1;
+		$('#bpm').text(`${Math.round(data.beatmap.stats.bpm.common * length_modifier * 10) / 10} bpm`);
+
+		let mins = Math.trunc((len_ / length_modifier) / 1000 / 60);
+		let secs = Math.trunc((len_ / length_modifier) / 1000 % 60);
+		$('#length').text(`${mins}:${secs.toString().padStart(2, '0')} length`);
+		$('#sr').text(`${Math.round(stats.difficulty.stars * 100) / 100} stars`);
 
 		$('#title').text(`${data.beatmap.artist} - ${data.beatmap.title} [${data.beatmap.version}]`);
 	}
 
 	if (scoreVisible) {
+		let accMode = isAcc();
+
 		let scores = [];
 		for (let i = 0; i < TEAMSIZE * 2; i++) {
-			let score = data.tourney.clients[i]?.play?.score || 0;
-			if (data.tourney.clients[i]?.play?.mods?.name?.toUpperCase().includes('EZ')) score *= 1.75;
-			scores.push({ id: i, score });
+			if (accMode) {
+				let score = data.tourney.clients[i]?.play?.accuracy || 0;
+				if (data.tourney.clients[i]?.play?.playerName === '') {
+					score = 0;
+				}
+        		scores.push({ id: i, score });
+			}
+			else {
+				let score = data.tourney.clients[i]?.play?.score || 0;
+				let map_obj = mappool.beatmaps.find(m => m.beatmap_id == mapid);
+				let multiplier = 1.0;
+				let mods = data.tourney.clients[i]?.play?.mods?.name?.toUpperCase();
+				if (!mods.toUpperCase() || mods.toUpperCase() === 'NF') {
+					mods = 'NM';
+				}
+				for (const key in map_obj.multipliers) {
+					if (mods.toUpperCase().includes(key)) {
+						multiplier *= map_obj.multipliers[key];
+					}
+				}
+				score *= multiplier;
+				scores.push({ id: i, score });
+			}
 		}
 
 		// scoreRed = 665624;
 		// scoreBlue = 796743;
 		scoreRed = scores.filter(s => s.id < TEAMSIZE).map(s => s.score).reduce((a, b) => a + b);
 		scoreBlue = scores.filter(s => s.id >= TEAMSIZE).map(s => s.score).reduce((a, b) => a + b);
+		let maxscore = 1000000;
+		if (accMode) {
+			scoreRed /= TEAMSIZE;
+			scoreBlue /= TEAMSIZE;
+			maxscore = 100.0;
+		}
 		let scorediff = Math.abs(scoreRed - scoreBlue);
 
-		animation.red_score.update(scoreRed);
-		animation.blue_score.update(scoreBlue);
-		animation.score_diff.update(scorediff);
-		const lead_bar_width = `${Math.max(10, 360 * (Math.min(0.5, Math.pow(scorediff / 1000000, 0.7)) * 2))}px`;
+		let animationMode = accMode ? acc_animation : animation;
+		animationMode.red_score.update(scoreRed);
+		animationMode.blue_score.update(scoreBlue);
+		animationMode.score_diff.update(scorediff);
+		const lead_bar_width = `${Math.max(10, 360 * (Math.min(0.5, Math.pow(scorediff / maxscore, 0.7)) * 2))}px`;
 
 		if (scoreRed > scoreBlue) {
 			$('#score_red').addClass('winning');
@@ -137,7 +169,7 @@ socket.onmessage = async event => {
 
 			if (now - last_score_update > 300) {
 				last_score_update = now;
-				$('#score_diff').attr('data-before', '◀').attr('data-after', '').css('opacity', 1).addClass('red').removeClass('blue');
+				// $('#score_diff').attr('data-before', '◀').attr('data-after', '').css('opacity', 1).addClass('red').removeClass('blue');
 				$('#lead_bar').css('width', lead_bar_width).css('right', '960px').css('left', 'unset');
 				$('#lead_bar').addClass('red');
 				$('#lead_bar').removeClass('blue');
@@ -149,14 +181,14 @@ socket.onmessage = async event => {
 
 			if (now - last_score_update > 300) {
 				last_score_update = now;
-				$('#score_diff').attr('data-before', '').attr('data-after', '▶').css('opacity', 1).addClass('blue').removeClass('red');
+				// $('#score_diff').attr('data-before', '').attr('data-after', '▶').css('opacity', 1).addClass('blue').removeClass('red');
 				$('#lead_bar').css('width', lead_bar_width).css('right', 'unset').css('left', '960px');
 				$('#lead_bar').removeClass('red');
 				$('#lead_bar').addClass('blue');
 			}
 		}
 		else {
-			$('#score_diff').attr('data-before', '').attr('data-after', '').css('opacity', 0).removeClass('red').removeClass('blue');
+			// $('#score_diff').attr('data-before', '').attr('data-after', '').css('opacity', 0).removeClass('red').removeClass('blue');
 			$('#score_red').removeClass('winning');
 			$('#score_blue').removeClass('winning');
 
@@ -201,27 +233,4 @@ const team_lookup = {
 	bot: 'bot',
 	left: 'red',
 	right: 'blue'
-}
-
-const getModStats = (cs_raw, ar_raw, od_raw, bpm_raw, mods) => {
-	mods = mods.replace('NC', 'DT');
-
-	let speed = mods.includes('DT') ? 1.5 : mods.includes('HT') ? 0.75 : 1;
-	let ar = mods.includes('HR') ? ar_raw * 1.4 : mods.includes('EZ') ? ar_raw * 0.5 : ar_raw;
-
-	let ar_ms = Math.max(Math.min(ar <= 5 ? 1800 - 120 * ar : 1200 - 150 * (ar - 5), 1800), 450) / speed;
-	ar = ar < 5 ? (1800 - ar_ms) / 120 : 5 + (1200 - ar_ms) / 150;
-
-	let cs = Math.round(Math.min(mods.includes('HR') ? cs_raw * 1.3 : mods.includes('EZ') ? cs_raw * 0.5 : cs_raw, 10) * 10) / 10;
-
-	let od = mods.includes('HR') ? od_raw * 1.4 : mods.includes('EZ') ? od_raw * 0.5 : od_raw;
-	od = Math.round(Math.min((79.5 - Math.min(79.5, Math.max(19.5, 79.5 - Math.ceil(6 * od))) / speed) / 6, 11) * 10) / 10;
-
-	return {
-		cs: Math.round(cs * 10) / 10,
-		ar: Math.round(ar * 10) / 10,
-		od: Math.round(od * 10) / 10,
-		bpm: Math.round(bpm_raw * speed * 10) / 10,
-		speed
-	}
 }
