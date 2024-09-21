@@ -4,8 +4,6 @@ html {
 	margin: 0;
 	overflow-y: hidden;
 	font-family: 'Gotham';
-	font-weight: 900;
-	font-size: 48px;
 	color: white;
 	user-select: none;
 }
@@ -45,6 +43,9 @@ html {
 }
 
 .team-name {
+	font-weight: 900;
+	font-size: 48px;
+	line-height: 48px;
 	width: fit-content; 
 	background-color: var(--light);
 	padding: 0 10px 0 10px;
