@@ -1,8 +1,8 @@
-# Nashe Cup 3 Stream Overlay
+# [Nashe Cup 3](https://osu.ppy.sh/community/forums/topics/1965851?n=1) Stream Overlay
 
 This overlay is intended to be used with [tosu version 3.3.0](https://github.com/KotRikD/tosu/releases/tag/v3.3.0). Compatibility not guaranteed with other versions.
 
-Assets and design provided by [megumic](https://osu.ppy.sh/users/7537133). Original overlay created by shdewz and ILW8 for [4 Digit World Cup 2024](https://github.com/shdewz/4wc-stream-overlay).
+Assets and design created by [megumic](https://osu.ppy.sh/users/7537133). Original overlay created by [shdewz](https://github.com/shdewz) and [ILW8](https://github.com/ILW8) for [4 Digit World Cup 2024](https://github.com/shdewz/4wc-stream-overlay).
 
 ## Notes
 
